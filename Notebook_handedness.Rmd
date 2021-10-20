@@ -1,0 +1,417 @@
+---
+title: "R Notebook Handedness"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r message=FALSE, warning=FALSE}
+####Libraries and Data Loading####
+
+list.of.packages <- c('gamlss', 'openxlsx', 'readr','tidymv','mgcv','dplyr','ggplot2')
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+
+library(openxlsx)
+library(gamlss)
+library(readr)
+library(mgcv)
+library(tidymv)
+library(dplyr)
+library(ggplot2)
+
+
+
+data <- read.csv('https://raw.githubusercontent.com/SG540/handedness_reanalysis/main/data_handedness.csv')
+
+set.seed(1892)
+
+data$gender <- as.factor(data$gender)
+data$school <- as.factor(data$school)
+data$h <- as.numeric(data$h)
+data$spat <- as.numeric(data$spat)
+data$mat <- as.numeric(data$mat)
+
+
+data <- data[sample(nrow(data)), ]
+
+dat_1=subset(data, Exp == "Exp1") %>% dplyr::select(-c(spat))
+dat_2=subset(data, Exp == "Exp2") %>% dplyr::select(-c(spat))
+dat_3=subset(data, Exp == "Exp3") %>% dplyr::select(-c(school))
+dat_4=subset(data, Exp == "Exp4")
+dat_5=subset(data, Exp == "Exp5")
+
+
+
+dat_3$mat_inv <- abs(dat_3$mat-max(dat_3$mat))
+dat_4$mat_inv <- abs(dat_4$mat-max(dat_4$mat))
+
+```
+
+
+
+
+#Experiment 1
+
+Pretty much the same.
+
+```{r}
+
+####Base Model####
+
+
+
+gamlss_1 <- gamlss(mat ~ pb(h) + gender + random(school), 
+                     sigma.formula =~ 1,
+                     nu.formula =~ 1,
+                     c.crit = 0.001,
+                     data = dat_1, n.cyc = 100, family = NBI())
+
+plot(gamlss_1) #diagnostic plots
+```
+
+
+```{r}
+dropterm(gamlss_1, test="Chisq")
+```
+
+
+```{r warning=FALSE}
+####Interaction####
+
+df1 <- edf(gamlss_1)$`random(school)`
+
+gamlss_1_int <- gamlss(mat ~ pvc(h, by=gender) + 
+                      random(school, df=df1), 
+                       sigma.formula =~ 1,
+                       nu.formula =~ 1,
+                       c.crit = 0.001,
+                       data = dat_1, n.cyc = 100, family = NBI())
+
+
+plot(gamlss_1_int)
+```
+
+
+```{r warning=FALSE}
+dropterm(gamlss_1_int, test="Chisq")
+```
+
+
+```{r warning=FALSE}
+GAIC(gamlss_1,gamlss_1_int,k=2.5)
+```
+
+```{r}
+#####Graphs#####
+
+model_1 <- gam(
+  mat ~ s(h, by=gender) + 
+    gender + s(school , bs="re"),
+  data = dat_1, family=nb()
+)
+
+model_1p <- predict_gam(model_1, exclude_terms = "s(school)")
+model_1p %>%
+  filter(school == "1") %>%
+  mutate(Gender = case_when(gender == 0 ~ "Females",
+                            gender == 1 ~ "Males")) %>%
+  ggplot(aes(h, fit)) +
+  geom_smooth_ci(Gender)
+
+```
+
+
+#Experiment 2
+
+In the original paper, interaction effect.
+Here, only direct effect. Also, non-symmetrical relationship.
+
+
+
+```{r}
+####Base Model####
+
+
+
+gamlss_2 <- gamlss(mat ~ pb(h) + gender + random(school), 
+                   sigma.formula =~ 1,
+                   nu.formula =~ 1,
+                   c.crit=0.001,
+                   data=dat_2, n.cyc = 100, family=NBI())
+
+plot(gamlss_2)
+```
+
+
+```{r warning=FALSE}
+dropterm(gamlss_2, test="Chisq")
+```
+
+
+```{r warning=FALSE}
+#####Interaction#####
+
+df2 <- edf(gamlss_2)$`random(school)`
+
+gamlss_2_int <- gamlss(mat ~ pvc(h, by=gender) + 
+                         random(school, df=df2), 
+                       sigma.formula =~ 1,
+                       nu.formula =~ 1,
+                       c.crit=0.001,
+                       data=dat_2, n.cyc = 100, family=NBI())
+
+
+plot(gamlss_2_int)
+```
+
+
+```{r warning=FALSE}
+dropterm(gamlss_2_int, test="Chisq")
+```
+
+
+```{r warning=FALSE}
+GAIC(gamlss_2,gamlss_2_int,k=2.5)
+```
+
+
+```{r warning=FALSE}
+#####Graphs#####
+
+model_2 <- gam(
+  mat ~ s(h) + 
+    gender + s(school , bs="re"),
+  data = dat_2, family=nb()
+)
+
+
+model_2p <- predict_gam(model_2, exclude_terms = "s(school)")
+model_2p %>%
+  filter(school == "1") %>%
+  mutate(Gender = case_when(gender == 0 ~ "Females",
+                            gender == 1 ~ "Males")) %>%
+  ggplot(aes(h, fit)) +
+  geom_smooth_ci(Gender)
+
+
+```
+
+#Experiment 3
+
+In the original paper an effect was found.
+No effect is found here.
+
+```{r}
+####Base Model####
+
+
+gamlss_3 <- gamlss(mat_inv ~ pb(h) + spat + gender, 
+                   sigma.formula =~ 1,
+                   nu.formula =~ 1,
+                   c.crit = 0.001,
+                   data = dat_3, n.cyc = 100, family = NBI())
+
+plot(gamlss_3)
+```
+
+
+```{r}
+dropterm(gamlss_3, test="Chisq")
+```
+
+
+```{r warning=FALSE}
+####Interaction####
+
+gamlss_3_int <- gamlss(mat_inv ~ pvc(h, by=gender) + spat, 
+                       sigma.formula =~ 1,
+                       nu.formula =~ 1,
+                       c.crit = 0.001,
+                       data = dat_3, n.cyc = 100, family = NBI())
+
+
+plot(gamlss_3_int)
+```
+
+
+```{r warning=FALSE}
+dropterm(gamlss_3_int, test="Chisq")
+```
+
+
+```{r}
+GAIC(gamlss_3,gamlss_3_int,k=2.5)
+```
+
+
+```{r}
+####Graphs####
+
+model_3 <- gam(
+  mat_inv ~ s(h) + 
+    gender,
+  data = dat_3, family = nb()
+)
+
+summary(model_3)
+
+
+model_3p <- predict_gam(model_3)
+model_3p %>%
+  mutate(Gender = case_when(gender == 0 ~ "Females",
+                            gender == 1 ~ "Males")) %>%
+  ggplot(aes(h, fit)) +
+  geom_smooth_ci(Gender)
+
+```
+
+
+
+#Experiment 4
+
+In the original paper a direct effect and an interaction effect was found.
+Only a direct was found here. Also, non-symmetrical relation.
+
+```{r}
+
+gamlss_4 <- gamlss(round(mat_inv) ~ pb(h) + gender + spat + random(school), 
+                   sigma.formula =~ 1,
+                   nu.formula =~ 1,
+                   c.crit = 0.001,
+                   data = dat_4, n.cyc = 100, family = NBI())
+
+plot(gamlss_4)
+```
+
+
+```{r}
+dropterm(gamlss_4, test="Chisq")
+```
+
+
+```{r warning=FALSE}
+####Interaction####
+
+df4 <- edf(gamlss_4)$`random(school)`
+gamlss_4_int <- gamlss(round(mat_inv) ~ pvc(h, by = gender) + spat + 
+                         random(school, df = df4), 
+                       sigma.formula =~ 1,
+                       nu.formula =~ 1,
+                       c.crit = 0.001,
+                       data = dat_4, n.cyc = 100, family = NBI())
+
+
+plot(gamlss_4_int)
+```
+
+
+```{r warning=FALSE}
+dropterm(gamlss_4_int, test="Chisq")
+```
+
+
+```{r}
+GAIC(gamlss_4,gamlss_4_int,k=2.5)
+```
+
+
+```{r}
+####Graphs####
+
+model_4 <- gam(
+  mat_inv ~ s(h) +
+    gender + s(school, bs = "re"),
+  data = dat_4, family = nb()
+)
+
+
+model_4p <- predict_gam(model_4, exclude_terms = "s(school)")
+model_4p %>%
+  filter(school == "1") %>%
+  mutate(Gender = case_when(gender == 0 ~ "Females",
+                            gender == 1 ~ "Males")) %>%
+  ggplot(aes(h, fit)) +
+  geom_smooth_ci(Gender)
+
+
+```
+
+
+#Experiment 5
+
+Pretty much the same.
+
+```{r}
+####Base Model####
+
+
+
+gamlss_5 <- gamlss(I(mat*2) ~ pb(h) + gender + spat +
+                     random(school), 
+                   sigma.formula =~ 1,
+                   nu.formula =~ 1,
+                   c.crit = 0.001,
+                   data = dat_5, n.cyc = 100, family = NBI())
+
+plot(gamlss_5)
+```
+
+
+```{r}
+dropterm(gamlss_5, test="Chisq")
+```
+
+
+```{r warning=FALSE}
+####Interaction####
+
+df5 <- edf(gamlss_5)$`random(school)`
+gamlss_5_int <- gamlss(I(mat*2) ~ pvc(h, by = gender) + spat +
+                         random(school, df = df5), 
+                   sigma.formula =~ 1,
+                   nu.formula =~ 1,
+                   c.crit = 0.001,
+                   data = dat_5, n.cyc = 100, family = NBI())
+
+
+plot(gamlss_5_int)
+```
+
+
+```{r warning=FALSE}
+dropterm(gamlss_5_int, test="Chisq")
+```
+
+
+```{r}
+GAIC(gamlss_5,gamlss_5_int,k=2.5)
+```
+
+```{r}
+####Graphs####
+
+model_5 <- gam(
+  I(mat*2) ~ s(h, by=gender) + 
+    gender + s(school, bs = "re"),
+  data = dat_5, family = nb()
+)
+
+
+model_5p <- predict_gam(model_5, exclude_terms = "s(school)")
+model_5p %>%
+  filter(school == "1") %>%
+  mutate(Gender = case_when(gender == 0 ~ "Females",
+                            gender == 1 ~ "Males")) %>%
+  ggplot(aes(h, fit)) +
+  geom_smooth_ci(Gender)
+
+```
+
+
